@@ -32,7 +32,7 @@ def check_argument_length_correct():
 check_argument_length_correct()
 
 #gives back the formatted string, the ip address and the port number
-def http_head_format(url,type_request):
+def http_head_format(url):
 	#split at colon, to remove port from host
 	host = url.hostname
 	path = url.path
@@ -42,21 +42,20 @@ def http_head_format(url,type_request):
 	port = url.port
 	if url.port == None:
 		port = 80
-		return ("{type_request} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(type_request = type_request,path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
 	else:
-		return ("{type_request} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(type_request = type_request,path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
 		
 #parses the url
 def parse_URL():
 	url = urlparse(sys.argv[-1])
 	if url.scheme == "http":
-		return http_head_format(url,"HEAD")
+		return http_head_format(url)
 	else:
 		error_message(2)
 		sys.exit(1)
 
 def connect_to_get_HEAD(GETHeader,ip_address,port):
-
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
 	#In case it doesn't connect within 5 seconds
 	clientSocket.settimeout(5)
@@ -86,19 +85,50 @@ def extract_HEAD_information(header):
 			if len(head_split[i]) < 16 or head_split[i][0] != "C":
 				continue
 			elif head_split[i].split(":")[0] == "Content-Length":
-				print head_split[i].split(":")[1]
 				return head_split[i].split(":")[1]
 
 	else:
 		error_message(4)
 		sys.exit(1)
 
-def write_data(GETHeader,ip_address,port,content_length):
-	print GETHeader
-	print ip_address
-	print port
-	print content_length
+def write_data(GETHeader,ip_address,port,filename):
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	#In case it doesn't connect within 5 seconds
+	clientSocket.settimeout(5)
+	try:clientSocket.connect((ip_address,port))
+	except skt.timeout:
+		error_message(3)
+		sys.exit(1)
+	clientSocket.send(GETHeader)
+	receiving_data = clientSocket.recv(1024)
+	full_string = receiving_data
+	left_over_string_from_header = ""
+	header = ""
+	body = ""
+	header_found = False
+	while receiving_data and not header_found:
+		receiving_data = clientSocket.recv(1024)
+		full_string+=receiving_data
+		if not header_found and "\r\n\r\n" in full_string:
+			header_leftOver = full_string.split("\r\n\r\n")
+			header = header_leftOver[0]
+			left_over_string_from_header= header_leftOver[1]
+			body = left_over_string_from_header
+			header_found = True
+			while (receiving_data):
+				receiving_data = clientSocket.recv(1024)
+				body += receiving_data
 
+
+	print len(body)
+	downloaded = open('hello.txt','wb')
+	# print "data received "+str(i),
+	# print d
+	downloaded.write(body)
+
+	clientSocket.close()
+	
+	
 
 
 
@@ -132,7 +162,7 @@ header_received = connect_to_get_HEAD(GETHeader,ip_address,port)
 #Get useful information from header
 content_length = extract_HEAD_information(header_received)
 
-write_data(GETHeader,ip_address,port,content_length)
+write_data(GETHeader,ip_address,port,sys.argv[2])
 
 
 
