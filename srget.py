@@ -2,6 +2,7 @@ import sys
 import socket as skt
 import os
 from urlparse import urlparse
+#A Bunch of Error print messages
 def error_message(error_code):
 	if error_code ==1:
 		print "Error: Incorrect input format."
@@ -12,7 +13,7 @@ def error_message(error_code):
 	elif error_code == 3:
 		print "Error: Socket Time Out"
 
-
+#Just checking that the input in the command line is correct
 def check_argument_length_correct():
 	if (len(sys.argv) == 4 and sys.argv[1] == "-o"):
 		return True
@@ -26,33 +27,34 @@ def check_argument_length_correct():
 		sys.exit(1)
 		
 check_argument_length_correct()
+
 #gives back the formatted string, the ip address and the port number
 def http_head_format(url):
 	#split at colon, to remove port from host
-	host = url.netloc.split(":")[0]
+	host = url.hostname
 	path = url.path
 	if path == "":
 		path = "/"
-	
 	ip_address = skt.gethostbyname(host)
+	print ip_address
 	port = url.port
 	if url.port == None:
 		port = 80
-		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("HEAD {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
 	else:
-		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip,port)
+		return ("HEAD {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
 		
 #parses the url
 def parse_URL():
 	url = urlparse(sys.argv[-1])
 	if url.scheme == "http":
 		return http_head_format(url)
-	
 	else:
 		error_message(2)
+		sys.exit(1)
 
-def connect(GETHeader,ip_address,port):
-	#some TCP stuff
+def connect_to_get_HEAD(GETHeader,ip_address,port):
+
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
 	#In case it doesn't connect within 5 seconds
 	clientSocket.settimeout(5)
@@ -61,27 +63,46 @@ def connect(GETHeader,ip_address,port):
 		error_message(3)
 		sys.exit(1)
 	clientSocket.send(GETHeader)
-	
-	recieving_data = clientSocket.recv(1024)
-	full_string = recieving_data
-	while recieving_data:
-		recieving_data = clientSocket.recv(1024)
-		full_string+=recieving_data
+	receiving_data = clientSocket.recv(1024)
+	full_string = receiving_data
+	while receiving_data:
+		receiving_data = clientSocket.recv(1024)
+		full_string+=receiving_data
+
 	clientSocket.close()
-	print full_string
-	print "Website accessed"
+	print "--------------------------EeEEEEEEEEEEEEEEEEEEEEEEEE------------------"
+	
+	return full_string
+
+def extract_HEAD_information(header):
+	print header
+	
 
 
-
+	
 
 #returns a tuple with GET header, ip address and port:
 GETHeader_ipAddress_port = parse_URL()
-#separate the tuple:
+
+#GET header is set to a variable
 GETHeader = GETHeader_ipAddress_port[0]
+
+#giving ip it's own variable
 ip_address = GETHeader_ipAddress_port[1]
+
+#giving port it's own variable
 port = GETHeader_ipAddress_port[2]
+
 #puts the separated tuple into a connection function
-connect(GETHeader,ip_address,port)
+#the returned output is the header :
+header_received = connect_to_get_HEAD(GETHeader,ip_address,port)
+
+
+#Get useful information from header
+extract_HEAD_information(header_received)
+
+
+
 
 
 
