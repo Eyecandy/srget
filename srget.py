@@ -12,6 +12,9 @@ def error_message(error_code):
 		print "Use: http protocol"
 	elif error_code == 3:
 		print "Error: Socket Time Out"
+	elif error_code == 4:
+		print "Bad request"
+
 
 #Just checking that the input in the command line is correct
 def check_argument_length_correct():
@@ -29,26 +32,25 @@ def check_argument_length_correct():
 check_argument_length_correct()
 
 #gives back the formatted string, the ip address and the port number
-def http_head_format(url):
+def http_head_format(url,type_request):
 	#split at colon, to remove port from host
 	host = url.hostname
 	path = url.path
 	if path == "":
 		path = "/"
 	ip_address = skt.gethostbyname(host)
-	print ip_address
 	port = url.port
 	if url.port == None:
 		port = 80
-		return ("HEAD {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{type_request} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(type_request = type_request,path = path,ip = ip_address,port = str(port)),ip_address,port)
 	else:
-		return ("HEAD {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{type_request} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(type_request = type_request,path = path,ip = ip_address,port = str(port)),ip_address,port)
 		
 #parses the url
 def parse_URL():
 	url = urlparse(sys.argv[-1])
 	if url.scheme == "http":
-		return http_head_format(url)
+		return http_head_format(url,"HEAD")
 	else:
 		error_message(2)
 		sys.exit(1)
@@ -75,7 +77,36 @@ def connect_to_get_HEAD(GETHeader,ip_address,port):
 	return full_string
 
 def extract_HEAD_information(header):
-	print header
+	head_split = header.split("\r\n")
+	status_code = head_split[0]
+	if status_code=="HTTP/1.1 200 OK":
+		for i in range(1,len(head_split)-1):
+			#just wanna check if the length is large enough and that the first letter is not C
+			#if it is not C or smaller than 16 continue
+			if len(head_split[i]) < 16 or head_split[i][0] != "C":
+				continue
+			elif head_split[i].split(":")[0] == "Content-Length":
+				print head_split[i].split(":")[1]
+				return head_split[i].split(":")[1]
+
+	else:
+		error_message(4)
+		sys.exit(1)
+
+def write_data(GETHeader,ip_address,port,content_length):
+	print GETHeader
+	print ip_address
+	print port
+	print content_length
+
+
+
+
+
+
+
+
+
 	
 
 
@@ -99,7 +130,9 @@ header_received = connect_to_get_HEAD(GETHeader,ip_address,port)
 
 
 #Get useful information from header
-extract_HEAD_information(header_received)
+content_length = extract_HEAD_information(header_received)
+
+write_data(GETHeader,ip_address,port,content_length)
 
 
 
