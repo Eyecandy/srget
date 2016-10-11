@@ -14,23 +14,17 @@ def error_message(error_code):
 		print "Error: Socket Time Out"
 	elif error_code == 4:
 		print "Bad request"
-
-
 #Just checking that the input in the command line is correct
 def check_argument_length_correct():
 	if (len(sys.argv) == 4 and sys.argv[1] == "-o"):
 		return True
-
-
 	elif len(sys.argv) == 6 and sys.argv[1] == "-o" and sys.argv[3] == "-c":
 		return True
-		
 	else: 
 		error_message(1)
 		sys.exit(1)
 		
 check_argument_length_correct()
-
 #gives back the formatted string, the ip address and the port number
 def http_head_format(url):
 	#split at colon, to remove port from host
@@ -39,6 +33,7 @@ def http_head_format(url):
 	if path == "":
 		path = "/"
 	ip_address = skt.gethostbyname(host)
+	#print ip_address
 	port = url.port
 	if url.port == None:
 		port = 80
@@ -55,26 +50,6 @@ def parse_URL():
 		error_message(2)
 		sys.exit(1)
 
-def connect_to_get_HEAD(GETHeader,ip_address,port):
-	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
-	#In case it doesn't connect within 5 seconds
-	clientSocket.settimeout(5)
-	try:clientSocket.connect((ip_address,port))
-	except skt.timeout:
-		error_message(3)
-		sys.exit(1)
-	clientSocket.send(GETHeader)
-	receiving_data = clientSocket.recv(1024)
-	full_string = receiving_data
-	while receiving_data:
-		receiving_data = clientSocket.recv(1024)
-		full_string+=receiving_data
-
-	clientSocket.close()
-	print "--------------------------EeEEEEEEEEEEEEEEEEEEEEEEEE------------------"
-	
-	return full_string
-
 def extract_HEAD_information(header):
 	head_split = header.split("\r\n")
 	status_code = head_split[0]
@@ -85,20 +60,22 @@ def extract_HEAD_information(header):
 			if len(head_split[i]) < 16 or head_split[i][0] != "C":
 				continue
 			elif head_split[i].split(":")[0] == "Content-Length":
-				return head_split[i].split(":")[1]
-
+				return int(head_split[i].split(":")[1])
 	else:
 		error_message(4)
 		sys.exit(1)
-
 def write_data(GETHeader,ip_address,port,filename):
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
 	#In case it doesn't connect within 5 seconds
+	print ip_address
+	print port
 	clientSocket.settimeout(5)
 	try:clientSocket.connect((ip_address,port))
 	except skt.timeout:
+		print "SSSSSS"
 		error_message(3)
 		sys.exit(1)
+	print "after"
 	clientSocket.send(GETHeader)
 	receiving_data = clientSocket.recv(1024)
 	full_string = receiving_data
@@ -106,42 +83,32 @@ def write_data(GETHeader,ip_address,port,filename):
 	header = ""
 	body = ""
 	header_found = False
-	while receiving_data and not header_found:
+
+	while not header_found and receiving_data:
 		receiving_data = clientSocket.recv(1024)
 		full_string+=receiving_data
 		if not header_found and "\r\n\r\n" in full_string:
 			header_leftOver = full_string.split("\r\n\r\n")
 			header = header_leftOver[0]
 			left_over_string_from_header= header_leftOver[1]
+			content_length = extract_HEAD_information(header)
+			print content_length
 			body = left_over_string_from_header
+			byte_rec = len(left_over_string_from_header)
 			header_found = True
-			while (receiving_data):
+
+			while (content_length-byte_rec >0):
 				receiving_data = clientSocket.recv(1024)
 				body += receiving_data
+				byte_rec = len(body)
 
+	downloaded = open(filename,'wb')
 
-	print len(body)
-	downloaded = open('hello.txt','wb')
-	# print "data received "+str(i),
-	# print d
 	downloaded.write(body)
 
 	clientSocket.close()
 	
 	
-
-
-
-
-
-
-
-
-	
-
-
-	
-
 #returns a tuple with GET header, ip address and port:
 GETHeader_ipAddress_port = parse_URL()
 
@@ -154,14 +121,7 @@ ip_address = GETHeader_ipAddress_port[1]
 #giving port it's own variable
 port = GETHeader_ipAddress_port[2]
 
-#puts the separated tuple into a connection function
-#the returned output is the header :
-header_received = connect_to_get_HEAD(GETHeader,ip_address,port)
-
-
-#Get useful information from header
-content_length = extract_HEAD_information(header_received)
-
+#write data to filename
 write_data(GETHeader,ip_address,port,sys.argv[2])
 
 
