@@ -67,9 +67,7 @@ def extract_HEAD_information(header):
 def write_data(GETHeader,ip_address,port,filename):
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
 	#In case it doesn't connect within 5 seconds
-	
 	clientSocket.connect((ip_address,port))
-	
 	clientSocket.send(GETHeader)
 	receiving_data = clientSocket.recv(1024)
 	full_string = receiving_data
@@ -77,9 +75,10 @@ def write_data(GETHeader,ip_address,port,filename):
 	header = ""
 	body = ""
 	header_found = False
+	more_data = True
 	byte_rec = 0
 
-	while receiving_data:
+	while more_data and receiving_data:
 		if not header_found:
 			receiving_data = clientSocket.recv(1024)
 			full_string+=receiving_data
@@ -88,16 +87,17 @@ def write_data(GETHeader,ip_address,port,filename):
 			header = header_leftOver[0]
 			left_over_string_from_header= header_leftOver[1]
 			content_length = extract_HEAD_information(header)
-			print content_length
 			body = left_over_string_from_header
 			byte_rec = len(left_over_string_from_header)
-			print byte_rec
 			header_found = True
 		else:
-			y = min(content_length-byte_rec,1024)
-			receiving_data = clientSocket.recv(y)
-			body += receiving_data
-			byte_rec = len(body)
+			 y = min(content_length-byte_rec,4096)
+			 receiving_data = clientSocket.recv(y)
+			 body += receiving_data
+			 byte_rec = len(body)
+			 if content_length-byte_rec ==0:
+				print "True"
+				more_data = False
 
 	downloaded = open(filename,'wb')
 
