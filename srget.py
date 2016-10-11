@@ -77,8 +77,10 @@ def write_data(GETHeader,ip_address,port,filename):
 	header_found = False
 	more_data = True
 	byte_rec = 0
-
+	
+   
 	while more_data and receiving_data:
+
 		if not header_found:
 			receiving_data = clientSocket.recv(1024)
 			full_string+=receiving_data
@@ -91,11 +93,11 @@ def write_data(GETHeader,ip_address,port,filename):
 			byte_rec = len(left_over_string_from_header)
 			header_found = True
 		else:
-			 y = min(content_length-byte_rec,4096)
-			 receiving_data = clientSocket.recv(y)
-			 body += receiving_data
-			 byte_rec = len(body)
-			 if content_length-byte_rec ==0:
+			y = min(content_length-byte_rec,4096)
+			receiving_data = clientSocket.recv(y)
+			body += receiving_data
+			byte_rec = len(body)
+			if content_length-byte_rec ==0:
 				print "True"
 				more_data = False
 
