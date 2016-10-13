@@ -2,6 +2,7 @@ import sys
 import socket as skt
 import os
 from urlparse import urlparse
+import os.path
 #A Bunch of Error print messages
 def error_message(error_code):
 	if error_code ==1:
@@ -26,26 +27,25 @@ def check_argument_length_correct():
 		
 check_argument_length_correct()
 #gives back the formatted string, the ip address and the port number
-def http_head_format(url,DEFAULT_PORT = 80):
+def http_head_format(verb,url,DEFAULT_PORT = 80):
 	#split at colon, to remove port from host
 	host = url.hostname
 	path = url.path
 	if path == "":
 		path = "/"
 	ip_address = skt.gethostbyname(host)
-	#print ip_address
 	port = url.port
 	if url.port == None:
 		port = DEFAULT_PORT
-		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(verb = verb,path = path,ip = ip_address,port = str(port)),ip_address,port)
 	else:
-		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(verb = verb,path = path,ip = ip_address,port = str(port)),ip_address,port)
 		
 #parses the url
-def parse_URL():
+def parse_URL(verb):
 	url = urlparse(sys.argv[-1])
 	if url.scheme == "http":
-		return http_head_format(url)
+		return http_head_format(verb,url)
 	else:
 		error_message(2)
 		sys.exit(1)
@@ -76,18 +76,77 @@ def extract_HEAD_information(header):
 		error_message(4)
 		sys.exit(1)
 
-def check_rdoc():
+def check_Etag():
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip_address,port))
+	head = parse_URL("HEAD")
+	clientSocket.send(head[0])
+	receiving_data = clientSocket.recv(1024)
+	full_header = receiving_data
+	while receiving_data:
+		receiving_data = clientSocket.recv(1024)
+		full_header += receiving_data
+	rdoc = open("rdoc","r")
+	rdoc_line = rdoc.readlines()
+	
+	"""My rdoc has 3 lines, the first Last-Modified
+	The Second is for Etag, third is byte downloaded
+	hence if the if my document only contains less than than 3 elements
+	We have to download from scratch. This can happens since the Etag is optional 
+	in the HTTP response"""
+	if len(rdoc_line) > 3:
+		return False
+	"""this loop run through through the head information
+	and compares is to the rdoc information
+	if last modified dates are not the same return false,if etags are not the same return false
+	if Etag is not found return false"""
+	Etag_found = False
+	header_split = full_header.split("\r\n")
+	for line in header_split:
+		field_content = line.split(":")
+		field = field_content[0]
+		
+		if field == "Last-Modified":
+			content = field_content[1]
+			if content.strip() != rdoc_line[0].strip():
+				clientSocket.close()
+				return False
+		if field == "ETag":
+			Etag_found = True
+			content = field_content[1]
+			if content.strip() != rdoc_line[1].strip():
+				clientSocket.close()
+				return False
+	clientSocket.close()
+	return Etag_found
+
 	#what you have to do for next time:
 	#Send the header, the compare this header with the rdoc Etag and the Last-Modified
 	#if these are the same then you resume download, with GET header with an range of bytes in the header
-	pass
-def write_data(GETHeader,ip_address,port,filename):
-	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
-	#In case it doesn't connect within 5 seconds
-	clientSocket.connect((ip_address,port))
-	clientSocket.send(GETHeader)
-	receiving_data = clientSocket.recv(1024)
 
+def write_data(GETHeader,ip_address,port,filename):
+	
+	
+	#If there is no rdoc it also means there is no Etag
+	"""If the rdoc doesn't exists that means that there is no information stored
+	If there is no information stored then that means that the program went smoothly
+	because I delete the rdoc at the end of program. 
+	That means that all data is written
+	However if all data is not written the files exists and we will check for Etag and more """
+	can_resume_download = False
+	if os.path.exists("rdoc"):
+		can_resume_download = check_Etag()
+	
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	
+	clientSocket.connect((ip_address,port))
+	if not can_resume_download:
+		clientSocket.send(GETHeader)
+	else:
+		print "Can resume"
+		sys.exit(1)
+	
+	receiving_data = clientSocket.recv(1024)
 	full_string = receiving_data
 	left_over_string_from_header = ""
 	header = ""
@@ -95,6 +154,13 @@ def write_data(GETHeader,ip_address,port,filename):
 	header_found = False
 	more_data = True
 	byte_rec = 0
+
+	"""Append if there exists and Etag that matches current file"""
+	if os.path.exists(filename):
+		os.remove(filename)
+
+	download2 = open(filename,"a") #currently appending
+
 	clientSocket.settimeout(10)
 	while more_data and receiving_data:
 		if not header_found:
@@ -103,7 +169,6 @@ def write_data(GETHeader,ip_address,port,filename):
 			except skt.timeout:
 				sys.exit(1)
 
-
 			full_string+=receiving_data
 		if not header_found and "\r\n\r\n" in full_string:
 			header_leftOver = full_string.split("\r\n\r\n")
@@ -111,6 +176,7 @@ def write_data(GETHeader,ip_address,port,filename):
 			left_over_string_from_header= header_leftOver[1]
 			content_length = extract_HEAD_information(header)
 			body = left_over_string_from_header
+			download2.write(left_over_string_from_header)
 			byte_rec = len(left_over_string_from_header)
 			header_found = True
 		else:
@@ -119,24 +185,32 @@ def write_data(GETHeader,ip_address,port,filename):
 				receiving_data = clientSocket.recv(y)
 			except skt.timeout:
 				sys.exit(1)
+			download2.write(receiving_data)
 			body += receiving_data
-			
 			byte_rec = len(body)
+			f = open("rdoc","r")
+			rdoc_lines = f.readlines()
+			w = open("rdoc","w")
+			for line in rdoc_lines:
+				w.write(line)
+			w.write(str(byte_rec)+"\r\n")
+			
+			
+
+
 			if content_length-byte_rec ==0:
 				more_data = False
-
-	downloaded = open(filename,'wb')
-
-	downloaded.write(body)
-
+	os.remove("rdoc")
 	clientSocket.close()
 	
 	
 #returns a tuple with GET header, ip address and port:
-GETHeader_ipAddress_port = parse_URL()
+GETHeader_ipAddress_port = parse_URL("GET")
+
 
 #GET header is set to a variable
 GETHeader = GETHeader_ipAddress_port[0]
+
 
 #giving ip it's own variable
 ip_address = GETHeader_ipAddress_port[1]
