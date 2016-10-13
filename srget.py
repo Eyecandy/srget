@@ -26,7 +26,7 @@ def check_argument_length_correct():
 		
 check_argument_length_correct()
 #gives back the formatted string, the ip address and the port number
-def http_head_format(url):
+def http_head_format(url,DEFAULT_PORT = 80):
 	#split at colon, to remove port from host
 	host = url.hostname
 	path = url.path
@@ -36,7 +36,7 @@ def http_head_format(url):
 	#print ip_address
 	port = url.port
 	if url.port == None:
-		port = 80
+		port = DEFAULT_PORT
 		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
 	else:
 		return ("GET {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(path = path,ip = ip_address,port = str(port)),ip_address,port)
@@ -53,23 +53,41 @@ def parse_URL():
 def extract_HEAD_information(header):
 	head_split = header.split("\r\n")
 	status_code = head_split[0]
+	content_length = 0
+	resume_document = open("rdoc","wb")
 	if status_code=="HTTP/1.1 200 OK":
 		for i in range(1,len(head_split)-1):
+			field_and_content = head_split[i].split(":")
+			field = field_and_content[0]
+			content = field_and_content[1]
 			#just wanna check if the length is large enough and that the first letter is not C
 			#if it is not C or smaller than 16 continue
-			if len(head_split[i]) < 16 or head_split[i][0] != "C":
+			if (field[0] != "C" and field[0] != "E" and field[0] != "L"):
 				continue
-			elif head_split[i].split(":")[0] == "Content-Length":
-				return int(head_split[i].split(":")[1])
+			elif field == "Content-Length":
+				content_length = int(content)	
+			elif field =="ETag":
+				resume_document.write(content+"\r\n")
+			elif field == "Last-Modified":
+				resume_document.write(content+"\r\n")
+
+		return content_length
 	else:
 		error_message(4)
 		sys.exit(1)
+
+def check_rdoc():
+	#what you have to do for next time:
+	#Send the header, the compare this header with the rdoc Etag and the Last-Modified
+	#if these are the same then you resume download, with GET header with an range of bytes in the header
+	pass
 def write_data(GETHeader,ip_address,port,filename):
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
 	#In case it doesn't connect within 5 seconds
 	clientSocket.connect((ip_address,port))
 	clientSocket.send(GETHeader)
 	receiving_data = clientSocket.recv(1024)
+
 	full_string = receiving_data
 	left_over_string_from_header = ""
 	header = ""
@@ -77,12 +95,15 @@ def write_data(GETHeader,ip_address,port,filename):
 	header_found = False
 	more_data = True
 	byte_rec = 0
-	
-   
+	clientSocket.settimeout(10)
 	while more_data and receiving_data:
-
 		if not header_found:
-			receiving_data = clientSocket.recv(1024)
+			try:
+				receiving_data = clientSocket.recv(1024)
+			except skt.timeout:
+				sys.exit(1)
+
+
 			full_string+=receiving_data
 		if not header_found and "\r\n\r\n" in full_string:
 			header_leftOver = full_string.split("\r\n\r\n")
@@ -94,11 +115,14 @@ def write_data(GETHeader,ip_address,port,filename):
 			header_found = True
 		else:
 			y = min(content_length-byte_rec,4096)
-			receiving_data = clientSocket.recv(y)
+			try:
+				receiving_data = clientSocket.recv(y)
+			except skt.timeout:
+				sys.exit(1)
 			body += receiving_data
+			
 			byte_rec = len(body)
 			if content_length-byte_rec ==0:
-				print "True"
 				more_data = False
 
 	downloaded = open(filename,'wb')
@@ -129,6 +153,7 @@ write_data(GETHeader,ip_address,port,sys.argv[2])
 
 
 
+#create a dictionary and store all the information of the header
 
 
 
