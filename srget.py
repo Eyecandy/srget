@@ -37,9 +37,9 @@ def http_head_format(verb,url,Brange,DEFAULT_PORT = 80):
 	port = url.port
 	if url.port == None:
 		port = DEFAULT_PORT
-		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange =Brange,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: Close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange =Brange,ip = ip_address,port = str(port)),ip_address,port)
 	else:
-		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange = Brange,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: Close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange = Brange,ip = ip_address,port = str(port)),ip_address,port)
 		
 #parses the url
 def parse_URL(verb,Brange):
@@ -55,7 +55,7 @@ def extract_HEAD_information(header):
 	status_code = head_split[0]
 	content_length = 0
 	resume_document = open("rdoc","wb")
-	if status_code=="HTTP/1.1 200 OK":
+	if status_code[9]=="2":
 		for i in range(1,len(head_split)-1):
 			field_and_content = head_split[i].split(":")
 			field = field_and_content[0]
@@ -65,7 +65,8 @@ def extract_HEAD_information(header):
 			if (field[0] != "C" and field[0] != "E" and field[0] != "L"):
 				continue
 			elif field == "Content-Length":
-				content_length = int(content)	
+				content_length = int(content)
+				resume_document.write(content+"\r\n")	
 			elif field =="ETag":
 				resume_document.write(content+"\r\n")
 			elif field == "Last-Modified":
@@ -73,6 +74,8 @@ def extract_HEAD_information(header):
 
 		return content_length
 	else:
+		if os.path.exists("rdoc"):
+			os.remove("rdoc")
 		error_message(4)
 		sys.exit(1)
 
@@ -94,7 +97,7 @@ def check_Etag():
 	hence if the if my document only contains less than than 3 elements
 	We have to download from scratch. This can happens since the Etag is optional 
 	in the HTTP response"""
-	if len(rdoc_line) > 3:
+	if len(rdoc_line) == 0 or len(rdoc_line) == 1 or len(rdoc_line) == 2:
 		return False
 	"""this loop run through through the head information
 	and compares is to the rdoc information
@@ -108,22 +111,87 @@ def check_Etag():
 		
 		if field == "Last-Modified":
 			content = field_content[1]
-			if content.strip() != rdoc_line[0].strip():
+			if content.strip() != rdoc_line[1].strip():
 				clientSocket.close()
 				return False
 		if field == "ETag":
 			Etag_found = True
 			content = field_content[1]
-			if content.strip() != rdoc_line[1].strip():
+			if content.strip() != rdoc_line[2].strip():
+				
 				clientSocket.close()
 				return False
+
 	clientSocket.close()
-	print rdoc_line[-1]
+	
 	return Etag_found
 
+def do_resume(range_header,ip,port,filename):
+	
+	rdoc = open("rdoc","r")
+	rdoc_line = rdoc.readlines()
+	rdoc.close()
+	byte_recieved_so_far = int(rdoc_line[-1].strip())
+	content_length  = int(rdoc_line[0])
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip_address,port))
+	full_string = ""
+	rest_of_body = ""
+	header_not_found = True
+	restOfBody =""
+	clientSocket.settimeout(10)
+	download2 = open(filename,'ab')
+	clientSocket.send(range_header)
+	receiving_data = clientSocket.recv(1024)
+	
+	while content_length - byte_recieved_so_far  > 0 and receiving_data:
+		if not header_not_found:
+			try:
+				receiving_data = clientSocket.recv(1024)
+			except skt.timeout:
+				sys.exit(1)
+			full_string+=receiving_data
+		if  header_not_found and "\r\n\r\n" in full_string:
+			header_not_found = False
+			header_restOfBody = full_string.split("\r\n\r\n")
+			restOfBody = header_restOfBody[1]
+			byte_recieved_so_far += len(restOfBody) 
+			download2.write(restOfBody)
+		else:
+			y = min(content_length-byte_recieved_so_far,1024)
+			try:
+				receiving_data = clientSocket.recv(y)
+			except skt.timeout:
+				sys.exit(1)
+			download2.write(receiving_data)
+			restOfBody += receiving_data
+			byte_recieved_so_far += len(receiving_data) 
+			f = open("rdoc","r")
+			rdoc_lines = f.readlines()
+			f.close()
+			w = open("rdoc","wb")
+			for line in rdoc_lines:
+				w.write(line)
+			w = open("rdoc","ab")
+			w.write(str(byte_recieved_so_far)+"\r\n")
+
+			if content_length-byte_recieved_so_far ==0:
+				more_data = False
+	print byte_recieved_so_far
+	os.remove("rdoc")
+	clientSocket.close()
+
+
+
+
+
+
+	
 
 
 def write_data(GETHeader,ip_address,port,filename):
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip_address,port))	
 	
 	
 	#If there is no rdoc it also means there is no Etag
@@ -132,21 +200,28 @@ def write_data(GETHeader,ip_address,port,filename):
 	because I delete the rdoc at the end of program. 
 	That means that all data is written
 	However if all data is not written the files exists and we will check for Etag and more """
+	byte_rec = 0
 	can_resume_download = False
 	if os.path.exists("rdoc"):
 		can_resume_download = check_Etag()
 	
-	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
-	
-	clientSocket.connect((ip_address,port))
 	if not can_resume_download:
+		print GETHeader
 		clientSocket.send(GETHeader)
 	else:
 		print "Can resume"
+		r = open("rdoc","r")
+		line = r.readlines()
 
-		#range_header = parse_URL("GET",)
-		sys.exit(1)
-	
+		byteDownloaded_so_far = (line[-1]).strip()
+
+		range_details = "Range: bytes={byteDownloaded_so_far}-\r\n".format(byteDownloaded_so_far = byteDownloaded_so_far)
+		range_header = parse_URL("GET",range_details)
+		do_resume(range_header[0],ip_address,port,filename)
+		print "S"
+		sys.exit(0)
+	print "Not valid"
+
 	receiving_data = clientSocket.recv(1024)
 	full_string = receiving_data
 	left_over_string_from_header = ""
@@ -154,13 +229,15 @@ def write_data(GETHeader,ip_address,port,filename):
 	body = ""
 	header_found = False
 	more_data = True
-	byte_rec = 0
+
+	
+
 
 	"""Append if there exists and Etag that matches current file"""
 	if os.path.exists(filename):
 		os.remove(filename)
 
-	download2 = open(filename,"a") #currently appending
+	download2 = open(filename,"ab") #currently appending
 
 	clientSocket.settimeout(10)
 	while more_data and receiving_data:
@@ -180,7 +257,7 @@ def write_data(GETHeader,ip_address,port,filename):
 			download2.write(left_over_string_from_header)
 			byte_rec = len(left_over_string_from_header)
 			header_found = True
-		else:
+		if header_found:
 			y = min(content_length-byte_rec,4096)
 			try:
 				receiving_data = clientSocket.recv(y)
@@ -194,12 +271,14 @@ def write_data(GETHeader,ip_address,port,filename):
 			w = open("rdoc","wb")
 			for line in rdoc_lines:
 				w.write(line)
-			w = open("rdoc","a")
+			w = open("rdoc","ab")
+
 			w.write(str(byte_rec)+"\r\n")
 			
-		
 			if content_length-byte_rec ==0:
 				more_data = False
+			
+    
 	os.remove("rdoc")
 	clientSocket.close()
 	
@@ -227,7 +306,7 @@ write_data(GETHeader,ip_address,port,sys.argv[2])
 
 
 
-#create a dictionary and store all the information of the header
+#Make Bytes in rdoc add correctly with byte_recv
 
 
 
