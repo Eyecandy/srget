@@ -27,7 +27,7 @@ def check_argument_length_correct():
 		
 check_argument_length_correct()
 #gives back the formatted string, the ip address and the port number
-def http_head_format(verb,url,DEFAULT_PORT = 80):
+def http_head_format(verb,url,Brange,DEFAULT_PORT = 80):
 	#split at colon, to remove port from host
 	host = url.hostname
 	path = url.path
@@ -37,15 +37,15 @@ def http_head_format(verb,url,DEFAULT_PORT = 80):
 	port = url.port
 	if url.port == None:
 		port = DEFAULT_PORT
-		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(verb = verb,path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange =Brange,ip = ip_address,port = str(port)),ip_address,port)
 	else:
-		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\nAccept: text/html\r\n\r\n".format(verb = verb,path = path,ip = ip_address,port = str(port)),ip_address,port)
+		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange = Brange,ip = ip_address,port = str(port)),ip_address,port)
 		
 #parses the url
-def parse_URL(verb):
+def parse_URL(verb,Brange):
 	url = urlparse(sys.argv[-1])
 	if url.scheme == "http":
-		return http_head_format(verb,url)
+		return http_head_format(verb,url,Brange)
 	else:
 		error_message(2)
 		sys.exit(1)
@@ -79,7 +79,7 @@ def extract_HEAD_information(header):
 def check_Etag():
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
 	clientSocket.connect((ip_address,port))
-	head = parse_URL("HEAD")
+	head = parse_URL("HEAD","")
 	clientSocket.send(head[0])
 	receiving_data = clientSocket.recv(1024)
 	full_header = receiving_data
@@ -118,11 +118,10 @@ def check_Etag():
 				clientSocket.close()
 				return False
 	clientSocket.close()
+	print rdoc_line[-1]
 	return Etag_found
 
-	#what you have to do for next time:
-	#Send the header, the compare this header with the rdoc Etag and the Last-Modified
-	#if these are the same then you resume download, with GET header with an range of bytes in the header
+
 
 def write_data(GETHeader,ip_address,port,filename):
 	
@@ -144,6 +143,8 @@ def write_data(GETHeader,ip_address,port,filename):
 		clientSocket.send(GETHeader)
 	else:
 		print "Can resume"
+
+		#range_header = parse_URL("GET",)
 		sys.exit(1)
 	
 	receiving_data = clientSocket.recv(1024)
@@ -190,14 +191,13 @@ def write_data(GETHeader,ip_address,port,filename):
 			byte_rec = len(body)
 			f = open("rdoc","r")
 			rdoc_lines = f.readlines()
-			w = open("rdoc","w")
+			w = open("rdoc","wb")
 			for line in rdoc_lines:
 				w.write(line)
+			w = open("rdoc","a")
 			w.write(str(byte_rec)+"\r\n")
 			
-			
-
-
+		
 			if content_length-byte_rec ==0:
 				more_data = False
 	os.remove("rdoc")
@@ -205,7 +205,7 @@ def write_data(GETHeader,ip_address,port,filename):
 	
 	
 #returns a tuple with GET header, ip address and port:
-GETHeader_ipAddress_port = parse_URL("GET")
+GETHeader_ipAddress_port = parse_URL("GET","")
 
 
 #GET header is set to a variable
@@ -228,12 +228,6 @@ write_data(GETHeader,ip_address,port,sys.argv[2])
 
 
 #create a dictionary and store all the information of the header
-
-
-
-
-
-
 
 
 
