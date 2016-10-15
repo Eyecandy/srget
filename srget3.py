@@ -3,7 +3,7 @@ import socket as skt
 import os
 from urlparse import urlparse
 import os.path
-import pickle
+import cPickle as pickle
 
 def check_argument_length_correct():
 	if (len(sys.argv) == 4 and sys.argv[1] == "-o"):
@@ -72,19 +72,16 @@ def get_header_detail(header,meta_doc):
 	status_code = header_list[0]
 	check_status_code(status_code)
 	for i in header_list[1:]:
+		print i
 		i = i.split(":")
 		field,value = i[0],i[1]
 		dic[field] = value
-	meta_doc_w = open(meta_doc,'w')
+	meta_doc_w = open(meta_doc,'wb')
 	pickle.dump(dic,meta_doc_w)
+	meta_doc_w.close()
 	return dic
 
-def handle_write(body,filename,meta_doc,byte_recv,header_dic):
-	download = open(filename,'a')
-	download.write(body)
-	header_dic["byte_recv"] = byte_recv
-	meta_doc_w = open(meta_doc,'w')
-	pickle.dump(header_dic,meta_doc_w)
+
 	
 
 def get_data(clientSocket,content_length,body_so_far,filename,meta_doc,header_dic):
@@ -92,12 +89,20 @@ def get_data(clientSocket,content_length,body_so_far,filename,meta_doc,header_di
 	data_recv = clientSocket.recv(1024)
 	body = body_so_far + data_recv
 	byte_recv = len(body)
-	handle_write(body,filename,meta_doc,byte_recv,header_dic)
+	download = open(filename,'a')
+	download.write(body)
+	header_dic["byte_recv"] = byte_recv
+	meta_doc_w = open(meta_doc,'w')
+	pickle.dump(header_dic,meta_doc_w)
+	print header_dic['byte_recv']
 	
 	while data_recv and content_length - byte_recv != 0:
 		data_recv = clientSocket.recv(1024)
-		byte_recv += len(data_recv)
-		handle_write(data_recv,filename,meta_doc,byte_recv,header_dic)
+		download = open(filename,'a')
+		meta_doc_w = open(meta_doc,'w')
+		download.write(data_recv)
+		header_dic["byte_recv"] = header_dic["byte_recv"] + len(data_recv)
+		pickle.dump(header_dic,meta_doc_w)
 
 	print "download complete, bytes recieved =" +str(byte_recv)
 	
@@ -116,6 +121,7 @@ def create_meta_doc(filename,path):
 		
 
 def downloadFromStart(my_request,ip,port,meta_doc,filename):
+	check_if_filenameExist(filename)
 	print "inside downloadFromStart"
 	print "Connecting...."
 	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
@@ -128,15 +134,73 @@ def downloadFromStart(my_request,ip,port,meta_doc,filename):
 	header_dic = get_header_detail(header,meta_doc)
 	content_length = int(header_dic["Content-Length"])
 	print "ENTERING: get_data"
+	
 	get_data(clientSocket,content_length,body,filename,meta_doc,header_dic)
 	os.remove(meta_doc)
 
 	sys.exit(0)
+
+def remove_header_in_resume(clientSocket,my_request):
+	clientSocket.send(my_request)
+	data_recv = clientSocket.recv(1024)
+	data_so_far,body = data_recv,""
+	header_not_found = True
+   
+	while header_not_found:
+		data_recv = clientSocket.recv(1024)
+		data_so_far += data_recv
+		if "\r\n\r\n" in data_so_far:
+			header, body = data_so_far.split("\r\n\r\n")
+			header_not_found = False
+	return body
 		
 def resumeDownload(my_request,ip,port,meta_doc,filename):
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip,port))
+	dic = pickle.load(open(meta_doc,'r'))
+	
+	body =remove_header_in_resume(clientSocket,my_request)
+	
+	download = open(filename,'a')
+	download.write(body)
+	
+	mdw = open(meta_doc,'w')
+	
+	pickle.dump(dic,mdw)
+	content_length = int(dic["Content-Length"])
+	print dic['byte_recv']
+	
+	dic['byte_recv'] = len(body) + dic['byte_recv']
+	
+	data_recv = clientSocket.recv(1024)
+	download.write(data_recv)
+	dic["byte_recv"] = dic["byte_recv"] + len(data_recv)
 
-	print "inside resumeDownload"
-	print my_request
+	while data_recv:
+		data_recv = clientSocket.recv(1024)
+		download = open(filename,'a')
+		meta_doc_w = open(meta_doc,'w')
+		download.write(data_recv)
+		dic["byte_recv"] = dic["byte_recv"] + len(data_recv)
+		pickle.dump(dic,meta_doc_w)
+
+
+
+
+	os.remove(meta_doc)
+	clientSocket.close()
+
+
+
+
+	
+
+
+
+
+	
+
+
 
 
 
@@ -224,7 +288,7 @@ print "------------------------"
 ip,port,path = parsed_url[0],parsed_url[1],parsed_url[2]
 
 filename = sys.argv[2]
-check_if_filenameExist(filename)
+
 print "Creating meta_doc"
 meta_doc = create_meta_doc(filename,path)
 
@@ -234,7 +298,3 @@ print "THIS IS THE REQUEST CHOSEN BASED ON IF META DOC EXISTS:"
 my_request = make_request(type_request,ip,port,path,"")
 print "CHOOSE TO RESUME OR DOWNLOAD FROM START"
 downloadFromStart_or_resumeDownload(type_request,my_request,ip,port,meta_doc,filename)
-
-
-	
-
