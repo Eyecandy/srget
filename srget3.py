@@ -52,8 +52,10 @@ def find_header_response(clientSocket):
 		except skt.timeout:
 			print "socket time out from find_header_response"
 		if "\r\n\r\n" in data_so_far:
+			
 			header,body = data_so_far.split("\r\n\r\n")
 			header_not_found = False
+	
 	return (header,body)
 def check_status_code(status_code):
 	if status_code[9] != "2":
@@ -71,16 +73,45 @@ def get_header_detail(header,meta_doc):
 		i = i.split(":")
 		field,value = i[0],i[1]
 		dic[field] = value
-	open_meta_doc = open(meta_doc,'w')
-	pickle.dump(dic,open_meta_doc)
+	meta_doc_w = open(meta_doc,'w')
+	pickle.dump(dic,meta_doc_w)
 	return dic
 
-def write_data(content_length,body_so_far,filename):
-	print "inside write_data"
-	byte_rec = len(body_so_far)
-
-
+def handle_write(body,filename,meta_doc,byte_recv,header_dic):
+	download = open(filename,'a')
+	download.write(body)
+	header_dic["byte_recv"] = byte_recv
+	meta_doc_w = open(meta_doc,'w')
+	pickle.dump(header_dic,meta_doc_w)
 	
+
+def get_data(clientSocket,content_length,body_so_far,filename,meta_doc,header_dic):
+	print "inside get_data"
+	data_recv = clientSocket.recv(1024)
+	body = body_so_far + data_recv
+	byte_recv = len(body)
+	handle_write(body,filename,meta_doc,byte_recv,header_dic)
+	print content_length - byte_recv
+	while data_recv and content_length - byte_recv != 0:
+		data_recv = clientSocket.recv(1024)
+		byte_recv += len(data_recv)
+		handle_write(data_recv,filename,meta_doc,byte_recv,header_dic)
+
+	print "download complete, bytes recieved =" +str(byte_recv)
+	print header_dic
+
+	clientSocket.close()
+	print "socket closed"
+	
+
+def create_meta_doc(filename,path):
+	unusable_path = path
+	path = ""
+	for i in unusable_path:
+		if i.isalpha() or i.isdigit():
+			path += i
+	return filename+path+".txt"
+		
 
 def downloadFromStart(my_request,ip,port,meta_doc,filename):
 	print "inside downloadFromStart"
@@ -93,12 +124,21 @@ def downloadFromStart(my_request,ip,port,meta_doc,filename):
 	header,body = find_header_response(clientSocket)
 	print "ENTERING: get get_header_detail"
 	header_dic = get_header_detail(header,meta_doc)
-	content_length = header_dic["Content-Length"]
-	print "ENTERING: write_data"
-	write_data(content_length,body,filename)
+	content_length = int(header_dic["Content-Length"])
+	print "ENTERING: get_data"
+	get_data(clientSocket,content_length,body,filename,meta_doc,header_dic)
+
+	sys.exit(0)
 		
 def resumeDownload():
 	print "inside resumeDownload"
+
+
+def check_if_filenameExist(filename):
+	if os.path.exists(filename):
+		os.remove(filename)
+
+
 	
 
 
@@ -109,7 +149,10 @@ print "------------------------"
 ip,port,path = parsed_url[0],parsed_url[1],parsed_url[2]
 
 filename = sys.argv[2]
-meta_doc = ip+str(port)+".txt"
+check_if_filenameExist(filename)
+print "Creating meta_doc"
+meta_doc = create_meta_doc(filename,path)
+
 
 type_request = decide_if_HEAD_or_GET_request(meta_doc)
 print "THIS IS THE REQUEST CHOSEN BASED ON IF META DOC EXISTS:"
