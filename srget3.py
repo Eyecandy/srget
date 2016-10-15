@@ -36,8 +36,10 @@ def downloadFromStart_or_resumeDownload(type_req,my_request,ip,port,meta_doc,fil
 		print "downloadFromStart function chosen"
 		downloadFromStart(my_request,ip,port,meta_doc,filename)
 	if type_req == "HEAD":
-		print "resumeDownload function chosen"
-		resumeDownload()
+		print "Entering: metaDoc_compare_newHeader"
+		metaDoc_compare_newHeader(my_request,ip,port,meta_doc,filename)
+		
+
 
 def find_header_response(clientSocket):
 	print "inside find_header_response"
@@ -91,14 +93,14 @@ def get_data(clientSocket,content_length,body_so_far,filename,meta_doc,header_di
 	body = body_so_far + data_recv
 	byte_recv = len(body)
 	handle_write(body,filename,meta_doc,byte_recv,header_dic)
-	print content_length - byte_recv
+	
 	while data_recv and content_length - byte_recv != 0:
 		data_recv = clientSocket.recv(1024)
 		byte_recv += len(data_recv)
 		handle_write(data_recv,filename,meta_doc,byte_recv,header_dic)
 
 	print "download complete, bytes recieved =" +str(byte_recv)
-	print header_dic
+	
 
 	clientSocket.close()
 	print "socket closed"
@@ -127,16 +129,89 @@ def downloadFromStart(my_request,ip,port,meta_doc,filename):
 	content_length = int(header_dic["Content-Length"])
 	print "ENTERING: get_data"
 	get_data(clientSocket,content_length,body,filename,meta_doc,header_dic)
+	os.remove(meta_doc)
 
 	sys.exit(0)
 		
-def resumeDownload():
+def resumeDownload(my_request,ip,port,meta_doc,filename):
+
 	print "inside resumeDownload"
+	print my_request
+
+
 
 
 def check_if_filenameExist(filename):
 	if os.path.exists(filename):
 		os.remove(filename)
+
+def HEAD_request_detail(header):
+	newhead_dic = {}
+	header_list = header.split("\r\n")
+	status_code = header_list[0]
+	check_status_code(status_code)
+	for i in header_list[1:]:
+		i = i.split(":")
+		if i[0] != '':
+			field,value = i[0],i[1]
+			newhead_dic[field] = value
+	return newhead_dic
+def create_Brange(meta_doc_dic):
+	byteRange_metadoc = meta_doc_dic["byte_recv"]
+	byteRange = "Range: bytes={byteRange}-".format(byteRange = byteRange_metadoc)
+	return byteRange.strip()+"\r\n"
+
+
+
+
+def metaDoc_compare_newHeader(my_request,ip,port,meta_doc,filename):
+	print "inside metaDoc_compare_newHeader"
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip,port))
+	clientSocket.send(my_request)
+	head_recv = clientSocket.recv(1024)
+	head_string = head_recv
+	while head_recv:
+		head_recv = clientSocket.recv(1024)
+		head_string+= head_recv
+	clientSocket.close()
+	newhead_dic = HEAD_request_detail(head_string)
+
+	meta_doc_dic = pickle.load(open(meta_doc,'r'))
+	CL_metad, CL_newhd = meta_doc_dic["Content-Length"],newhead_dic["Content-Length"]
+	E_metad, E_newhd = meta_doc_dic["ETag"],newhead_dic["ETag"]
+	LM_metad,LM_newhd = meta_doc_dic["Last-Modified"],newhead_dic["Last-Modified"]
+	
+
+	if CL_metad == CL_newhd and E_metad == E_newhd:
+		print "create BrangeString"
+		Brange = create_Brange(meta_doc_dic)
+		print "making new Brange request"
+		my_request = make_request("GET",ip,port,path,Brange)
+		print "Entering: resumeDownload"
+		resumeDownload(my_request,ip,port,meta_doc,filename)
+	elif CL_metad == CL_newhd and LM_metad == LM_newhd:
+		print "create BrangeString"
+		Brange = create_Brange(meta_doc_dic)
+		print "making new Brange request"
+		my_request = make_request("GET",ip,port,path,Brange)
+		print "Entering: resumeDownload"
+		resumeDownload(my_request,ip,port,meta_doc,filename)
+
+	else:
+		"Have to start download from start"
+		downloadFromStart_or_resumeDownload("GET",my_request,ip,port,meta_doc,filename)
+
+
+	
+
+
+
+
+
+
+
+	
 
 
 	
