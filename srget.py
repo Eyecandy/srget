@@ -3,313 +3,220 @@ import socket as skt
 import os
 from urlparse import urlparse
 import os.path
-#A Bunch of Error print messages
-def error_message(error_code):
-	if error_code ==1:
-		print "Error: Incorrect input format."
-		print "Use this format: srget -o <output file> [-c [<numConn>]] http://someurl.domain[:port]/path/to/file"
-	elif error_code ==2:
-		print "Error: incorrect protocol"
-		print "Use: http protocol"
-	elif error_code == 3:
-		print "Error: Socket Time Out"
-	elif error_code == 4:
-		print "Bad request"
-#Just checking that the input in the command line is correct
+import cPickle as pickle
+
 def check_argument_length_correct():
 	if (len(sys.argv) == 4 and sys.argv[1] == "-o"):
 		return True
 	elif len(sys.argv) == 6 and sys.argv[1] == "-o" and sys.argv[3] == "-c":
 		return True
 	else: 
-		error_message(1)
+		print "Arguments put into command line is incorrect"
 		sys.exit(1)
-		
 check_argument_length_correct()
-#gives back the formatted string, the ip address and the port number
-def http_head_format(verb,url,Brange,DEFAULT_PORT = 80):
-	#split at colon, to remove port from host
-	host = url.hostname
-	path = url.path
-	if path == "":
+
+def decide_if_HEAD_or_GET_request(meta_doc):
+	if os.path.exists(meta_doc):
+		return "HEAD"
+	else:
+		return "GET"
+def parse_URL(url):
+	url = urlparse(url)
+	host,port,path = url.hostname,url.port,url.path
+	ip = skt.gethostbyname(host)
+	if path =="":
 		path = "/"
-	ip_address = skt.gethostbyname(host)
-	port = url.port
-	if url.port == None:
-		port = DEFAULT_PORT
-		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: Close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange =Brange,ip = ip_address,port = str(port)),ip_address,port)
-	else:
-		return ("{verb} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: Close\r\n{Brange}Accept: text/html\r\n\r\n".format(verb = verb,path = path,Brange = Brange,ip = ip_address,port = str(port)),ip_address,port)
+	return (ip,port,path)
+
+def make_request(GET_or_HEAD,ip,port,path,Brange,DEFAULT_PORT =80):
+	return ("{GET_or_HEAD} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nConnection: Close\r\n{Brange}Accept: text/html\r\n\r\n".format(GET_or_HEAD = GET_or_HEAD,path = path,Brange =Brange,ip = ip,port = str(port)))
+
+def downloadFromStart_or_resumeDownload(type_req,my_request,ip,port,meta_doc,filename):
+	if type_req == "GET":
 		
-#parses the url
-def parse_URL(verb,Brange):
-	url = urlparse(sys.argv[-1])
-	if url.scheme == "http":
-		return http_head_format(verb,url,Brange)
-	else:
-		error_message(2)
-		sys.exit(1)
-
-def extract_HEAD_information(header):
-	head_split = header.split("\r\n")
-	status_code = head_split[0]
-	content_length = 0
-	resume_document = open("rdoc","wb")
-	if status_code[9]=="2":
-		for i in range(1,len(head_split)-1):
-			field_and_content = head_split[i].split(":")
-			field = field_and_content[0]
-			content = field_and_content[1]
-			#just wanna check if the length is large enough and that the first letter is not C
-			#if it is not C or smaller than 16 continue
-			if (field[0] != "C" and field[0] != "E" and field[0] != "L"):
-				continue
-			elif field == "Content-Length":
-				content_length = int(content)
-				resume_document.write(content+"\r\n")	
-			elif field =="ETag":
-				resume_document.write(content+"\r\n")
-			elif field == "Last-Modified":
-				resume_document.write(content+"\r\n")
-
-		return content_length
-	else:
-		if os.path.exists("rdoc"):
-			os.remove("rdoc")
-		error_message(4)
-		sys.exit(1)
-
-def check_Etag():
-	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
-	clientSocket.connect((ip_address,port))
-	head = parse_URL("HEAD","")
-	clientSocket.send(head[0])
-	receiving_data = clientSocket.recv(1024)
-	full_header = receiving_data
-	while receiving_data:
-		receiving_data = clientSocket.recv(1024)
-		full_header += receiving_data
-	rdoc = open("rdoc","r")
-	rdoc_line = rdoc.readlines()
-	
-	"""My rdoc has 3 lines, the first Last-Modified
-	The Second is for Etag, third is byte downloaded
-	hence if the if my document only contains less than than 3 elements
-	We have to download from scratch. This can happens since the Etag is optional 
-	in the HTTP response"""
-	if len(rdoc_line) == 0 or len(rdoc_line) == 1 or len(rdoc_line) == 2:
-		return False
-	"""this loop run through through the head information
-	and compares is to the rdoc information
-	if last modified dates are not the same return false,if etags are not the same return false
-	if Etag is not found return false"""
-	Etag_found = False
-	header_split = full_header.split("\r\n")
-	for line in header_split:
-		field_content = line.split(":")
-		field = field_content[0]
+		downloadFromStart(my_request,ip,port,meta_doc,filename)
+	if type_req == "HEAD":
 		
-		if field == "Last-Modified":
-			content = field_content[1]
-			if content.strip() != rdoc_line[1].strip():
-				clientSocket.close()
-				return False
-		if field == "ETag":
-			Etag_found = True
-			content = field_content[1]
-			if content.strip() != rdoc_line[2].strip():
-				
-				clientSocket.close()
-				return False
+		metaDoc_compare_newHeader(my_request,ip,port,meta_doc,filename)
+		
 
-	clientSocket.close()
-	
-	return Etag_found
 
-def do_resume(range_header,ip,port,filename):
+def find_header_response(clientSocket):
 	
-	rdoc = open("rdoc","r")
-	rdoc_line = rdoc.readlines()
-	rdoc.close()
-	byte_recieved_so_far = int(rdoc_line[-1].strip())
-	content_length  = int(rdoc_line[0])
-	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
-	clientSocket.connect((ip_address,port))
-	full_string = ""
-	rest_of_body = ""
 	header_not_found = True
-	restOfBody =""
+	data_recv = clientSocket.recv(1024)
+	data_so_far,body = data_recv,""
 	clientSocket.settimeout(10)
-	download2 = open(filename,'ab')
-	clientSocket.send(range_header)
-	receiving_data = clientSocket.recv(1024)
-	
-	while content_length - byte_recieved_so_far  > 0 and receiving_data:
-		if not header_not_found:
-			try:
-				receiving_data = clientSocket.recv(1024)
-			except skt.timeout:
-				sys.exit(1)
-			full_string+=receiving_data
-		if  header_not_found and "\r\n\r\n" in full_string:
+	while header_not_found:
+		try:
+			data_recv = clientSocket.recv(1024)
+			data_so_far += data_recv
+		except skt.timeout:
+			print "socket time out from find_header_response"
+		if "\r\n\r\n" in data_so_far:
+			
+			header,body = data_so_far.split("\r\n\r\n")
 			header_not_found = False
-			header_restOfBody = full_string.split("\r\n\r\n")
-			restOfBody = header_restOfBody[1]
-			byte_recieved_so_far += len(restOfBody) 
-			download2.write(restOfBody)
-		else:
-			y = min(content_length-byte_recieved_so_far,1024)
-			try:
-				receiving_data = clientSocket.recv(y)
-			except skt.timeout:
-				sys.exit(1)
-			download2.write(receiving_data)
-			restOfBody += receiving_data
-			byte_recieved_so_far += len(receiving_data) 
-			f = open("rdoc","r")
-			rdoc_lines = f.readlines()
-			f.close()
-			w = open("rdoc","wb")
-			for line in rdoc_lines:
-				w.write(line)
-			w = open("rdoc","ab")
-			w.write(str(byte_recieved_so_far)+"\r\n")
+	
+	return (header,body)
+def check_status_code(status_code):
+	if status_code[9] != "2":
+		print "Status code is not 200, EXITING"
+		sys.exit(1)
 
-			if content_length-byte_recieved_so_far ==0:
-				more_data = False
-	print byte_recieved_so_far
-	os.remove("rdoc")
+
+def get_header_detail(header,meta_doc):
+	
+	dic = {}
+	header_list = header.split("\r\n")
+	status_code = header_list[0]
+	check_status_code(status_code)
+	for i in header_list[1:]:
+		i = i.split(":")
+		field,value = i[0],i[1]
+		dic[field] = value
+	meta_doc_w = open(meta_doc,'wb')
+	pickle.dump(dic,meta_doc_w)
+	meta_doc_w.close()
+	return dic
+
+def get_data(clientSocket,content_length,body_so_far,filename,meta_doc,header_dic):
+	data_recv = clientSocket.recv(1024)
+	body = body_so_far + data_recv
+	byte_recv = len(body)
+	download = open(filename,'a')
+	download.write(body)
+	header_dic["byte_recv"] = byte_recv
+	meta_doc_w = open(meta_doc,'w')
+	pickle.dump(header_dic,meta_doc_w)
+	while data_recv and content_length - byte_recv != 0:
+		data_recv = clientSocket.recv(1024)
+		download = open(filename,'a')
+		meta_doc_w = open(meta_doc,'w')
+		download.write(data_recv)
+		header_dic["byte_recv"] = header_dic["byte_recv"] + len(data_recv)
+		pickle.dump(header_dic,meta_doc_w)
+	clientSocket.close()
+	
+def create_meta_doc(filename,path):
+	unusable_path = path
+	path = ""
+	for i in unusable_path:
+		if i.isalpha() or i.isdigit():
+			path += i
+	return filename+path+".txt"
+		
+def downloadFromStart(my_request,ip,port,meta_doc,filename):
+	check_if_filenameExist(filename)
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip,port))	
+	clientSocket.send(my_request)
+	header,body = find_header_response(clientSocket)
+	header_dic = get_header_detail(header,meta_doc)
+	content_length = int(header_dic["Content-Length"])
+	get_data(clientSocket,content_length,body,filename,meta_doc,header_dic)
+	os.remove(meta_doc)
+	sys.exit(0)
+
+def remove_header_in_resume(clientSocket,my_request):
+	clientSocket.send(my_request)
+	data_recv = clientSocket.recv(1024)
+	data_so_far,body = data_recv,""
+	header_not_found = True
+   
+	while header_not_found:
+		data_recv = clientSocket.recv(1024)
+		data_so_far += data_recv
+		if "\r\n\r\n" in data_so_far:
+			header, body = data_so_far.split("\r\n\r\n")
+			header_not_found = False
+	return body
+		
+def resumeDownload(my_request,ip,port,meta_doc,filename):
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip,port))
+	dic = pickle.load(open(meta_doc,'r'))
+	body =remove_header_in_resume(clientSocket,my_request)
+	download = open(filename,'a')
+	download.write(body)
+	mdw = open(meta_doc,'w')
+	pickle.dump(dic,mdw)
+	content_length = int(dic["Content-Length"])
+	dic['byte_recv'] = len(body) + dic['byte_recv']
+	data_recv = clientSocket.recv(1024)
+	download.write(data_recv)
+	dic["byte_recv"] = dic["byte_recv"] + len(data_recv)
+	while data_recv:
+		data_recv = clientSocket.recv(1024)
+		download = open(filename,'a')
+		meta_doc_w = open(meta_doc,'w')
+		download.write(data_recv)
+		dic["byte_recv"] = dic["byte_recv"] + len(data_recv)
+		pickle.dump(dic,meta_doc_w)
+	os.remove(meta_doc)
 	clientSocket.close()
 
-
-
-
-
-
-	
-
-
-def write_data(GETHeader,ip_address,port,filename):
-	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
-	clientSocket.connect((ip_address,port))	
-	
-	
-	#If there is no rdoc it also means there is no Etag
-	"""If the rdoc doesn't exists that means that there is no information stored
-	If there is no information stored then that means that the program went smoothly
-	because I delete the rdoc at the end of program. 
-	That means that all data is written
-	However if all data is not written the files exists and we will check for Etag and more """
-	byte_rec = 0
-	can_resume_download = False
-	if os.path.exists("rdoc"):
-		can_resume_download = check_Etag()
-	
-	if not can_resume_download:
-		print GETHeader
-		clientSocket.send(GETHeader)
-	else:
-		print "Can resume"
-		r = open("rdoc","r")
-		line = r.readlines()
-
-		byteDownloaded_so_far = (line[-1]).strip()
-
-		range_details = "Range: bytes={byteDownloaded_so_far}-\r\n".format(byteDownloaded_so_far = byteDownloaded_so_far)
-		range_header = parse_URL("GET",range_details)
-		do_resume(range_header[0],ip_address,port,filename)
-		print "S"
-		sys.exit(0)
-	print "Not valid"
-
-	receiving_data = clientSocket.recv(1024)
-	full_string = receiving_data
-	left_over_string_from_header = ""
-	header = ""
-	body = ""
-	header_found = False
-	more_data = True
-
-	
-
-
-	"""Append if there exists and Etag that matches current file"""
+def check_if_filenameExist(filename):
 	if os.path.exists(filename):
 		os.remove(filename)
 
-	download2 = open(filename,"ab") #currently appending
+def HEAD_request_detail(header):
+	newhead_dic = {}
+	header_list = header.split("\r\n")
+	status_code = header_list[0]
+	check_status_code(status_code)
+	for i in header_list[1:]:
+		i = i.split(":")
+		if i[0] != '':
+			field,value = i[0],i[1]
+			newhead_dic[field] = value
+	return newhead_dic
+def create_Brange(meta_doc_dic):
+	byteRange_metadoc = meta_doc_dic["byte_recv"]
+	byteRange = "Range: bytes={byteRange}-".format(byteRange = byteRange_metadoc)
+	return byteRange.strip()+"\r\n"
 
-	clientSocket.settimeout(10)
-	while more_data and receiving_data:
-		if not header_found:
-			try:
-				receiving_data = clientSocket.recv(1024)
-			except skt.timeout:
-				sys.exit(1)
-
-			full_string+=receiving_data
-		if not header_found and "\r\n\r\n" in full_string:
-			header_leftOver = full_string.split("\r\n\r\n")
-			header = header_leftOver[0]
-			left_over_string_from_header= header_leftOver[1]
-			content_length = extract_HEAD_information(header)
-			body = left_over_string_from_header
-			download2.write(left_over_string_from_header)
-			byte_rec = len(left_over_string_from_header)
-			header_found = True
-		if header_found:
-			y = min(content_length-byte_rec,4096)
-			try:
-				receiving_data = clientSocket.recv(y)
-			except skt.timeout:
-				sys.exit(1)
-			download2.write(receiving_data)
-			body += receiving_data
-			byte_rec = len(body)
-			f = open("rdoc","r")
-			rdoc_lines = f.readlines()
-			w = open("rdoc","wb")
-			for line in rdoc_lines:
-				w.write(line)
-			w = open("rdoc","ab")
-
-			w.write(str(byte_rec)+"\r\n")
-			
-			if content_length-byte_rec ==0:
-				more_data = False
-			
-    
-	os.remove("rdoc")
+def metaDoc_compare_newHeader(my_request,ip,port,meta_doc,filename):
+	
+	clientSocket = skt.socket(skt.AF_INET,skt.SOCK_STREAM) 
+	clientSocket.connect((ip,port))
+	clientSocket.send(my_request)
+	head_recv = clientSocket.recv(1024)
+	head_string = head_recv
+	while head_recv:
+		head_recv = clientSocket.recv(1024)
+		head_string+= head_recv
 	clientSocket.close()
+	newhead_dic = HEAD_request_detail(head_string)
+
+	meta_doc_dic = pickle.load(open(meta_doc,'r'))
+	CL_metad, CL_newhd = meta_doc_dic["Content-Length"],newhead_dic["Content-Length"]
+	E_metad, E_newhd = meta_doc_dic["ETag"],newhead_dic["ETag"]
+	LM_metad,LM_newhd = meta_doc_dic["Last-Modified"],newhead_dic["Last-Modified"]
 	
-	
-#returns a tuple with GET header, ip address and port:
-GETHeader_ipAddress_port = parse_URL("GET","")
-
-
-#GET header is set to a variable
-GETHeader = GETHeader_ipAddress_port[0]
-
-
-#giving ip it's own variable
-ip_address = GETHeader_ipAddress_port[1]
-
-#giving port it's own variable
-port = GETHeader_ipAddress_port[2]
-
-#write data to filename
-write_data(GETHeader,ip_address,port,sys.argv[2])
+	if CL_metad == CL_newhd and E_metad == E_newhd:
+		Brange = create_Brange(meta_doc_dic)
+		my_request = make_request("GET",ip,port,path,Brange)		
+		resumeDownload(my_request,ip,port,meta_doc,filename)
+	elif CL_metad == CL_newhd and LM_metad == LM_newhd:	
+		Brange = create_Brange(meta_doc_dic)
+		my_request = make_request("GET",ip,port,path,Brange)
+		resumeDownload(my_request,ip,port,meta_doc,filename)
+	else:
+		downloadFromStart_or_resumeDownload("GET",my_request,ip,port,meta_doc,filename)
 
 
 
+parsed_url = parse_URL(sys.argv[-1])
 
+ip,port,path = parsed_url[0],parsed_url[1],parsed_url[2]
 
+filename = sys.argv[2]
 
+meta_doc = create_meta_doc(filename,path)
 
-#Make Bytes in rdoc add correctly with byte_recv
+type_request = decide_if_HEAD_or_GET_request(meta_doc)
 
+my_request = make_request(type_request,ip,port,path,"")
 
-
-
-
-
+downloadFromStart_or_resumeDownload(type_request,my_request,ip,port,meta_doc,filename)
