@@ -1,4 +1,4 @@
-#!/usr/bin/en/env python
+#!/usr/bin/env python
 import sys,os
 import asyncore, socket
 import logging
@@ -19,7 +19,7 @@ def make_request(req_type, what, details, ver="1.1"):
     req_line = "{verb} {w} HTTP/{v}".format(
         verb=req_type, w=what, v=ver
     )
-    print req_line
+
     details = [
         "{name}: {v}".format(name=n,v=v) for (n,v) in details.iteritems()
     ]
@@ -99,7 +99,7 @@ def make_request2(GET_or_HEAD,ip,port,path,Brange,DEFAULT_PORT =80):
 
 def downloadFromStart_or_resumeDownload(type_req,ip,path,port,filename,meta_doc):
     
-    print type_req
+    
     Brange = 0
     my_request = make_request2('GET',ip,port,path,Brange)
     if type_req == "GET":
@@ -126,7 +126,7 @@ def downloadFromStart_or_resumeDownload(type_req,ip,path,port,filename,meta_doc)
             byteRange = "Range: bytes={byteRange}-\r\n".format(byteRange = Brange)
             my_request = make_request2('GET',ip,port,path,byteRange)
             
-            print Brange
+            
 
         return my_request,Brange
 
@@ -170,7 +170,7 @@ class HTTPClient(asyncore.dispatcher):
         asyncore.dispatcher.__init__(self)
         
        
-        
+    
         self.filename = filename
         
         self.ip,self.port,self.path  = parse_URL(url)
@@ -240,10 +240,10 @@ class HTTPClient(asyncore.dispatcher):
         elif self.header_found and not self.EveryByteDownloaded:
             self.filename_w.write(recv_bytes)
             self.len_recv_bytes += len(recv_bytes)
-            #self.meta_doc_w.write(str(self.len_recv_bytes)+"\r\n")
+            
             
 
-
+check_argumentLength()
 url= sys.argv[-1]
 filename = sys.argv[2]
  
