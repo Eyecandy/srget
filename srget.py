@@ -240,9 +240,7 @@ class HTTPClient(asyncore.dispatcher):
         elif self.header_found and not self.EveryByteDownloaded:
             self.filename_w.write(recv_bytes)
             self.len_recv_bytes += len(recv_bytes)
-            
-            
-
+    
 check_argumentLength()
 url= sys.argv[-1]
 filename = sys.argv[2]
